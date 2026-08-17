@@ -29,7 +29,6 @@ const fragmentSource = `
   uniform float u_lines;
   uniform float u_weight;
   uniform float u_breakup;
-  uniform float u_contrast;
   uniform float u_roughness;
 
   float hash(float n) {
@@ -99,15 +98,20 @@ const fragmentSource = `
     float darkness = darknessAt(sampleUv) * 0.5;
     darkness += darknessAt(sampleUv + vec2(pixelStep * 2.0, 0.0)) * 0.25;
     darkness += darknessAt(sampleUv - vec2(pixelStep * 2.0, 0.0)) * 0.25;
-    darkness = smoothstep(0.04 + u_contrast * 0.22, 0.94 - u_contrast * 0.22, darkness);
+    darkness = smoothstep(0.172, 0.808, darkness);
 
     float withinRow = fract(uv.y * u_lines) - 0.5;
     float x = uv.x * mix(28.0, 65.0, u_breakup);
     float breakNoise = fbm(x, seed);
-    float threshold = mix(0.78, 0.38, darkness) + u_breakup * 0.13;
+    float lightness = 1.0 - darkness;
+    float breakupInfluence = u_breakup * smoothstep(0.05, 0.65, lightness);
+    float highlightThreshold = mix(0.88, 0.32, darkness);
+    float threshold = mix(-0.05, highlightThreshold, sqrt(breakupInfluence));
     float endFray = noise2(vec2(uv.x * 240.0, withinRow * 8.0 + seed));
-    float frayedThreshold = threshold + (endFray - 0.5) * u_roughness * 0.16;
+    float frayedThreshold = threshold
+      + (endFray - 0.5) * u_roughness * breakupInfluence * 0.16;
     float occupancy = smoothstep(frayedThreshold - 0.035, frayedThreshold + 0.035, breakNoise);
+    occupancy = max(occupancy, smoothstep(0.7, 0.9, darkness));
     occupancy *= smoothstep(0.025, 0.13, darkness);
 
     float wobble = (noise(uv.x * 17.0, seed + 13.0) - 0.5) * u_roughness * 0.14;
@@ -219,9 +223,10 @@ gl.bufferData(
 )
 
 const uniforms = Object.fromEntries(
-  ["image", "imageSize", "canvasSize", "lines", "weight", "breakup", "contrast", "roughness"].map(
-    (name) => [name, gl.getUniformLocation(program, `u_${name}`)],
-  ),
+  ["image", "imageSize", "canvasSize", "lines", "weight", "breakup", "roughness"].map((name) => [
+    name,
+    gl.getUniformLocation(program, `u_${name}`),
+  ]),
 )
 
 const texture = gl.createTexture()
@@ -241,13 +246,12 @@ function setTexture(source) {
   render()
 }
 
-const defaults = { lines: 80, weight: 52, breakup: 58, contrast: 60, roughness: 46 }
+const defaults = { lines: 80, weight: 52, breakup: 58, roughness: 46 }
 const resetButton = document.querySelector("#reset-button")
 const controls = {
   lines: document.querySelector("#lines"),
   weight: document.querySelector("#weight"),
   breakup: document.querySelector("#breakup"),
-  contrast: document.querySelector("#contrast"),
   roughness: document.querySelector("#roughness"),
 }
 
@@ -272,7 +276,6 @@ function render() {
   gl.uniform1f(uniforms.lines, Number(controls.lines.value))
   gl.uniform1f(uniforms.weight, Number(controls.weight.value) / 100)
   gl.uniform1f(uniforms.breakup, Number(controls.breakup.value) / 100)
-  gl.uniform1f(uniforms.contrast, Number(controls.contrast.value) / 100)
   gl.uniform1f(uniforms.roughness, Number(controls.roughness.value) / 100)
   gl.drawArrays(gl.TRIANGLES, 0, 6)
 }
